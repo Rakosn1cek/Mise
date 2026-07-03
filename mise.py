@@ -70,7 +70,6 @@ class TelemetryBlocker(QWebEngineUrlRequestInterceptor):
 
 
 class MiseBrowser(QMainWindow):
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mise")
@@ -93,7 +92,7 @@ class MiseBrowser(QMainWindow):
 
         # Active workspace text indicator label
         self.workspace_label = QLabel(
-            f"  {self.workspace_engine.current_workspace}"
+            f"{self.workspace_engine.current_workspace}"
         )
         self.workspace_label.setObjectName("WorkspaceLabel")
         sidebar_layout.addWidget(self.workspace_label)
@@ -366,10 +365,16 @@ class MiseBrowser(QMainWindow):
                 new_view = QWebEngineView(self.window())
                 self.window().add_new_tab("about:blank", force_focus=True)
                 
+                return new_view
+                
                 # Get the newly created view instance from the active workspace array to attach the page pipeline
                 active_ws = self.window().workspace_engine.current_workspace
                 active_tabs = self.window().workspace_engine.workspaces[active_ws]
                 target_view = active_tabs[-1]
+
+                if type == QWebEnginePage.WebWindowType.WebBrowserTab or type == QWebEnginePage.WebWindowType.WebBrowserWindow:
+                    target_view.page().urlChanged.connect(lambda url: target_view.setUrl(url))
+                    
                 return target_view
                             
             def contextMenuEvent(self, event):
@@ -524,6 +529,14 @@ class MiseBrowser(QMainWindow):
             if hasattr(self, 'url_bar') and self.url_bar:
                 self.url_bar.setText(target_webview.url().toString())
 
+            # Evaluate whether the underlying rendering engine page is active and responding
+            if target_webview.page() and not target_webview.page().isLoading():
+                # Execute a lightweight, non-blocking check to verify if the JavaScript environment is responsive
+                target_webview.page().runJavaScript(
+                    "1;", 
+                    lambda res: target_webview.reload() if res is None else None
+                )
+
             if force_focus:
                 target_webview.setFocus()
         except RuntimeError:
@@ -659,6 +672,27 @@ class MiseBrowser(QMainWindow):
                 pass
 
     def update_tab_titles(self, webview, title):
+        # Match opening bracket, extract numbers, ignore subsequent descriptive text inside the brackets
+        match = re.match(r"^\((\d+)[^)]*\)", title)
+        
+        last_count = getattr(webview, "last_notification_count", 0)
+        
+        if match:
+            current_count = int(match.group(1))
+            if current_count > last_count:
+                try:
+                    subprocess.Popen([
+                        "notify-send",
+                        "-a", "Mise",
+                        "New Message",
+                        f"{current_count} unread in {title[match.end():].strip()}"
+                    ])
+                except Exception:
+                    pass
+            webview.last_notification_count = current_count
+        else:
+            webview.last_notification_count = 0
+
         active_ws = self.workspace_engine.current_workspace
         active_tabs = self.workspace_engine.workspaces[active_ws]
         if webview in active_tabs:
@@ -700,7 +734,7 @@ class MiseBrowser(QMainWindow):
             self.sidebar_widget.update()
     
         self.workspace_label.setText(
-            f"  {self.workspace_engine.current_workspace}"
+            f"{self.workspace_engine.current_workspace}"
         )
     
         self.shared_profile.settings().setAttribute(
@@ -735,7 +769,7 @@ class MiseBrowser(QMainWindow):
 
     def restore_active_workspace_tabs(self):
         """Constructs web views for every saved URL mapping belonging to the entire session layout on initialization."""
-        self.workspace_label.setText(f"   {self.workspace_engine.current_workspace}")
+        self.workspace_label.setText(f"{self.workspace_engine.current_workspace}")
         session_file = os.path.expanduser("~/.config/mise/session.json")
         all_workspaces_config = {self.workspace_engine.current_workspace: ["https://duckduckgo.com"]}
         
@@ -899,7 +933,7 @@ class MiseBrowser(QMainWindow):
             self.workspace_label.setText(f" Downloading: {target_name[:20]}...")
 
             download_item.isFinishedChanged.connect(
-                lambda: self.workspace_label.setText(f"  {self.workspace_engine.current_workspace}")
+                lambda: self.workspace_label.setText(f" {self.workspace_engine.current_workspace}")
             )
         else:
             download_item.cancel()
@@ -971,7 +1005,7 @@ if __name__ == "__main__":
     
     sys.argv.append("--enable-background-timer-throttling")
     sys.argv.append("--add-delay-to-background-timer-tasks")
-    sys.argv.append("--renderer-process-limit=2")
+    sys.argv.append("--renderer-process-limit=3")
     sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
 
     app = QApplication(sys.argv)

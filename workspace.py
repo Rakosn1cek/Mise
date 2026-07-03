@@ -56,11 +56,11 @@ class WorkspaceDashboard(QWidget):
         self.view_tree.clear()
 
         for ws_name, tabs in self.manager.workspaces.items():
-            ws_header = QListWidgetItem(f"ぎ  {ws_name}")
+            ws_header = QListWidgetItem(f" {ws_name}")
             ws_header.setData(Qt.ItemDataRole.UserRole, ("workspace", ws_name))
 
             if ws_name == self.manager.current_workspace:
-                ws_header.setText(f"ぎ  {ws_name} (Active)")
+                ws_header.setText(f" {ws_name} (Active)")
 
             self.view_tree.addItem(ws_header)
 
@@ -266,7 +266,7 @@ class WorkspaceEngine:
                 pass
 
         self.current_workspace = target_ws
-        self.main_window.workspace_label.setText(f"ぎ  {target_ws}")
+        self.main_window.workspace_label.setText(f" {target_ws}")
         self.main_window.tab_list.clear()
 
         if not self.workspaces[target_ws] or isinstance(self.workspaces[target_ws][0], str):
