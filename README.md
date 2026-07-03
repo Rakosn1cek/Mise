@@ -41,18 +41,17 @@ A lightweight, distraction-free, keyboard-driven terminal companion browser buil
 **Global Keyboard Actions**
 
 | Key Binding | Scope Context | Target Execution Logic |
-|---|---|---|
 | Ctrl + T | Application | Spawns a fresh tab instance routed to default search engine. |
 | Ctrl + W | Browser View | Close the active browser view widget container securely. |
-| Ctrl + B | Application | Focus directly into the webview window. |
+| Ctrl + B | Aplictaion | Focus directly into the webview window. |
 | Ctrl + Shift + W | Application | Toggles between active workspace tabs and the Workspaces Dashboard. |
 | Ctrl + S | Browser View | Clones the current address layout directly into a new duplicate tab. |
 | Ctrl + R | Browser View | Sends an immediate reload instruction wrapper to the active web page. |
 | Ctrl + D | Dashboard Tree | Quick-remove macro to clear the focused element item from memory. |
 | Ctrl + L | Application | Activates the floating wide address input box overlay spanning the frame. |
 | Ctrl + M | Application | Focus directly into the sidebar panel for instant arrow handling. |
-| CTRL + F | Application | Toggle links hints overlay. |
-| CTRL + P | Application | Opens a command palette floating window. |
+| CTRL + F | Aplication | Toggle links hints overlay. |
+| CTRL + P | Aplicattion | Opens a command palette floating window. |
 
 ---
 

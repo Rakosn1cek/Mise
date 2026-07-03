@@ -70,15 +70,14 @@ class CommandPalette(QDialog):
         self.populate_list(matches)
 
     def execute_command(self, item=None):
-        # Prefer the selected item, fall back to the input text
         cmd_text = item.text() if item else self.input.text()
         
         if cmd_text in self.commands:
             self.commands[cmd_text]()
-        else:
-            # Treat as a raw shell command
+            self.close()
+        elif cmd_text.strip():
             self.parent().run_in_terminal(cmd_text)
-        self.close()
+            self.close()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

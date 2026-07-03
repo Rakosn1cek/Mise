@@ -19,8 +19,8 @@ except Exception:
     pass
 
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor, QWebEngineScript, QWebEnginePage
+from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor, QAction
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor, QWebEngineScript, QWebEnginePage, QWebEngineContextMenuRequest
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QStackedWidget,
     QDialog,
+    QMenu,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
@@ -45,6 +46,7 @@ from palette import CommandPalette
 
 notification_worker_mod = __import__("notification-worker")
 NotificationWorker = notification_worker_mod.NotificationWorker
+
 help_menu_mod = __import__("help-menu")
 HelpMenu = help_menu_mod.HelpMenu
 
@@ -210,6 +212,7 @@ class MiseBrowser(QMainWindow):
         self.shared_profile = QWebEngineProfile("MiseSharedProfile", self)
         self.shared_profile.setPersistentStoragePath(storage_path)
         self.shared_profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+        
         self.shared_profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
         
         scrollbar_script = QWebEngineScript()
@@ -358,12 +361,18 @@ class MiseBrowser(QMainWindow):
         )
 
         class MiseWebView(QWebEngineView):
-            def contextMenuEvent(self, event):
-                from PyQt6.QtWidgets import QMenu
-                from PyQt6.QtGui import QAction
-                from PyQt6.QtWebEngineCore import QWebEngineContextMenuRequest
-                from PyQt6.QtCore import Qt
+            def createWindow(self, type):
+                # Intercept links targeting new windows or tabs and route them through the main window pipeline
+                new_view = QWebEngineView(self.window())
+                self.window().add_new_tab("about:blank", force_focus=True)
                 
+                # Get the newly created view instance from the active workspace array to attach the page pipeline
+                active_ws = self.window().workspace_engine.current_workspace
+                active_tabs = self.window().workspace_engine.workspaces[active_ws]
+                target_view = active_tabs[-1]
+                return target_view
+                            
+            def contextMenuEvent(self, event):
                 menu = QMenu(self)
                 menu.setObjectName("ContextMenu")
                 
@@ -373,6 +382,19 @@ class MiseBrowser(QMainWindow):
                 data = self.lastContextMenuRequest()
                 selected_text = data.selectedText().strip()
                 is_image = data.mediaType() == QWebEngineContextMenuRequest.MediaType.MediaTypeImage
+                link_url = data.linkUrl()
+                
+                # Condition: Right click target contains a valid web reference URL
+                if link_url.isValid() and not link_url.isEmpty():
+                    copy_link_action = QAction("Copy Link Address", self)
+                    copy_link_action.triggered.connect(lambda: self.triggerPageAction(self.page().WebAction.CopyLinkToClipboard))
+                    menu.addAction(copy_link_action)
+                    
+                    open_tab_action = QAction("Open Link in New Tab", self)
+                    open_tab_action.triggered.connect(lambda: self.window().add_new_tab(link_url.toString()))
+                    menu.addAction(open_tab_action)
+                    
+                    menu.addSeparator()
                 
                 # 1. Condition: User highlighted a text string
                 if selected_text:
@@ -432,12 +454,14 @@ class MiseBrowser(QMainWindow):
                     run_action = QAction("Run in Terminal", self)
                     run_action.triggered.connect(lambda: self.window().run_in_terminal(selected_text))
                     menu.addAction(run_action)
+
                          
                 menu.popup(event.globalPos())
 
         webview = MiseWebView()
         webview.setPage(web_page)
-        web_page.setBackgroundColor(QColor("#1a1b26"))
+        bg_hex = "#1a1b26" if self.is_dark_layout else "#f5f6f9"
+        web_page.setBackgroundColor(QColor(bg_hex))
 
         settings = webview.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.ForceDarkMode, self.is_dark_layout)
@@ -665,6 +689,7 @@ class MiseBrowser(QMainWindow):
         return False
 
     def hot_reload_theme(self):
+
         self.setStyleSheet("")
         fresh_css = get_browser_stylesheet(self.is_dark_layout)
         self.setStyleSheet(fresh_css)
@@ -673,24 +698,33 @@ class MiseBrowser(QMainWindow):
             self.sidebar_widget.style().unpolish(self.sidebar_widget)
             self.sidebar_widget.style().polish(self.sidebar_widget)
             self.sidebar_widget.update()
-
+    
         self.workspace_label.setText(
             f"  {self.workspace_engine.current_workspace}"
         )
-
-        # Force the global profile to acknowledge the theme switch
+    
         self.shared_profile.settings().setAttribute(
             QWebEngineSettings.WebAttribute.ForceDarkMode, self.is_dark_layout
         )
-
+        
+        # Clear out any stale custom scripts to prevent persistent style overrides
+        scripts = self.shared_profile.scripts()
+        for script in scripts.toList():
+            if script.name() == "theme_override":
+                scripts.remove(script)
+        
+        bg_hex = "#1a1b26" if self.is_dark_layout else "#f5f6f9"
+        canvas_colour = QColor(bg_hex)
+    
         for ws_name, tabs in self.workspace_engine.workspaces.items():
             for webview in tabs:
                 if not isinstance(webview, str):
-                    # Update local view settings
                     webview.settings().setAttribute(
                         QWebEngineSettings.WebAttribute.ForceDarkMode, self.is_dark_layout
                     )
-                    # Use a reliable visibility check to force a repaint reload on the active page
+                    if webview.page():
+                        webview.page().setBackgroundColor(canvas_colour)
+                        
                     if webview.isVisible():
                         webview.reload()
         
@@ -913,10 +947,14 @@ class MiseBrowser(QMainWindow):
         self.palette.show()
 
     def run_in_terminal(self, command):
-        """Spawns the selected command in a new terminal window."""
-        terminal_cmd = ["kitty", "-e", "zsh", "-c", f"{command}; exec zsh"]
-        subprocess.Popen(terminal_cmd)
+        """Copies text cleanly to the global clipboard and opens a fresh terminal."""
+        if not command.strip():
+            return
 
+        subprocess.run(["wl-copy", command])
+            
+        subprocess.Popen(["kitty"])
+        
 if __name__ == "__main__":
     import sys
     

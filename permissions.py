@@ -17,24 +17,38 @@ class PermissionEngine:
             "gmail.com": [
                 QWebEnginePage.Feature.Notifications
             ],
+            "zoho.eu": [
+                QWebEnginePage.Feature.Notifications
+            ],
+            "zoho.com": [
+                QWebEnginePage.Feature.Notifications
+            ],
             "reddit.com": [
                 QWebEnginePage.Feature.Notifications
             ]
         }
 
     def evaluate_request(self, page, security_origin, feature):
-        """Evaluates incoming resource requests and grants hardware permissions programmatically."""
+        """Evaluates incoming resource requests and routes them dynamically."""
         if not page:
             return
 
         requesting_host = security_origin.host().lower()
         
-        # Check if the domain matches any rules inside our trusted mapping dictionary
+        # Check requested feature against trusted domains
         for trusted_domain, allowed_features in self.allowed_permissions.items():
             if requesting_host == trusted_domain or requesting_host.endswith("." + trusted_domain):
                 if feature in allowed_features:
-                    page.setFeaturePermission(security_origin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                    page.setFeaturePermission(
+                        security_origin, 
+                        feature, 
+                        QWebEnginePage.PermissionPolicy.PermissionGrantedByUser
+                    )
                     return
 
         # Explicitly deny access if the domain or feature is not predefined
-        page.setFeaturePermission(security_origin, feature, QWebEnginePage.PermissionPolicy.PermissionDeniedByUser)
+        page.setFeaturePermission(
+            security_origin, 
+            feature, 
+            QWebEnginePage.PermissionPolicy.PermissionDeniedByUser
+        )
