@@ -10,7 +10,8 @@ class TelemetryBlocker(QWebEngineUrlRequestInterceptor):
         url_str = url.toString().lower()
         
         # Hard block specific ad distribution endpoints completely
-        if "alb.reddit.com" in host or host.endswith(".reddit.com/api/eval"):
+        # if "alb.reddit.com" in host or host.endswith(".reddit.com/api/eval"):
+        if "alb.reddit.com" in host or ".reddit.com/api/eval" in url_str:
             info.block(True)
             return
 

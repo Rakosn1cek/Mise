@@ -1,6 +1,6 @@
 # Mise Browser
 
-A lightweight, distraction-free, keyboard-driven terminal companion browser built with Python, PyQt6, and QtWebEngine. Mise bridges the gap between terminal efficiency and the modern web, offering independent workspace isolation, persistent session workflows, and strict asset blocking without the bulk of traditional browsers.
+Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine. It is designed specifically for power users who want maximum performance and zero interface clutter, making it ideal for fanless or resource-constrained laptops.
 
 ## Key Features
 - **Workspace Isolation**: Separate tab configurations into independent context layers, dynamically hydrating browser instances on demand to save memory.
@@ -28,13 +28,27 @@ A lightweight, distraction-free, keyboard-driven terminal companion browser buil
 
 ---
 
-## Directory Layout
+## Core Design
+- Built on a Chromium backbone via QtWebEngine without the usual browser overhead.
+- Distro-agnostic architecture running completely within local user space.
+- Native network-level ad and telemetry blocking that drops tracking requests before they download, keeping CPU utilisation low.
+- Aggressive background tab throttling profiles to prevent thermal spikes on fanless hardware.
+- Dynamic workspace layout separation to switch between tasks instantly.
 
-```zsh
-~/.config/mise/
-├── session.json                # Serialised workspace layout states
-└── browser_profile/            # Isolated cookie jars and disk cache profiles
-```
+---
+
+## Repository Structure
+- mise.py: The main application entry point and engine initialization loop.
+- workspace.py: Layout management, session handling, and the workspace dashboard tree [cite: 2026-07-04].
+- blocker.py: C++ level network request interceptor for bloat-free telemetry blocking.
+- config.py: Local JSON hardware configuration profiles and settings interface.
+- palette.py: Keyboard-driven command palette for interface navigation.
+- theme.py: Central stylesheet definitions handling dynamic dark and light mode shifts.
+- help-menu.py: Keybind reference and documentation overlay.
+- permissions.py: Granular site permission handling and rule sets.
+- notification-worker.py: Low-overhead background notification subsystem.
+- hinter.js: Injected script handler for link hinting and keyboard navigation.
+
 ---
 
 ## Core Component Control Mappings
@@ -83,3 +97,7 @@ Mise requires an environment tracking modern Python bindings alongside system da
 **Direct Invocation Trace**
 
 `python3 mise.py`
+
+All session data and hardware optimization profiles persist cleanly inside ~/.config/mise/. 
+
+Contributions, code audits, and optimizations regarding resource reduction are welcome.

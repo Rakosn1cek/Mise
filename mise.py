@@ -68,6 +68,63 @@ class TelemetryBlocker(QWebEngineUrlRequestInterceptor):
         if any(keyword in url_str for keyword in block_keywords):
             info.block(True)
 
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None, current_mode="low_end"):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedWidth(360)
+        self.setObjectName("SettingsWindow")
+        
+        # Apply clean translucent windows flags
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        
+        header = QLabel("Hardware Optimization Profile")
+        header.setStyleSheet("font-weight: bold; color: #2ac3de; font-size: 14px;")
+        layout.addWidget(header)
+        
+        # Configuration toggle buttons using descriptive state text
+        self.low_end_btn = QPushButton("Low-End / Fanless Profile (Throttled)")
+        self.high_end_btn = QPushButton("High-End / Performance Profile (Uncapped)")
+        
+        # Highlight active setting selection on window draw
+        self.selected_mode = current_mode
+        self.update_button_states()
+        
+        self.low_end_btn.clicked.connect(lambda: self.set_profile("low_end"))
+        self.high_end_btn.clicked.connect(lambda: self.set_profile("high_end"))
+        
+        layout.addWidget(self.low_end_btn)
+        layout.addWidget(self.high_end_btn)
+        
+        # Bottom window termination control rows
+        action_layout = QHBoxLayout()
+        action_layout.addStretch()
+        
+        save_btn = QPushButton("Save & Exit")
+        save_btn.clicked.connect(self.accept)
+        action_layout.addWidget(save_btn)
+        
+        layout.addLayout(action_layout)
+        self.setLayout(layout)
+        
+    def set_profile(self, mode):
+        self.selected_mode = mode
+        self.update_button_states()
+        
+    def update_button_states(self):
+        # Explicit style application based on selection mechanics
+        if self.selected_mode == "low_end":
+            self.low_end_btn.setStyleSheet("background-color: #364a85; color: #c0caf5; border: 1px solid #2ac3de;")
+            self.high_end_btn.setStyleSheet("background-color: transparent; color: #c0caf5; border: 1px solid #24283b;")
+        else:
+            self.low_end_btn.setStyleSheet("background-color: transparent; color: #c0caf5; border: 1px solid #24283b;")
+            self.high_end_btn.setStyleSheet("background-color: #364a85; color: #c0caf5; border: 1px solid #2ac3de;")
+
 
 class MiseBrowser(QMainWindow):
     def __init__(self):
@@ -254,13 +311,12 @@ class MiseBrowser(QMainWindow):
 
     def apply_interface_fonts(self):
         """Uniform text properties across sidebar elements, navigation nodes, and workspace items."""
-        ui_font = QFont("Noto Sans", 10)
+        ui_font = QFont("Noto Sans", 14)
         self.tab_list.setFont(ui_font)
-        self.workspace_label.setFont(ui_font)
         self.url_bar.setFont(ui_font)
         self.dashboard_view.view_tree.setFont(ui_font)
 
-        icon_font = QFont("Noto Sans", 12)
+        icon_font = QFont("Noto Sans", 16)
         self.theme_toggle_btn.setFont(icon_font)
         self.noti_toggle_btn.setFont(icon_font)
 
@@ -465,7 +521,7 @@ class MiseBrowser(QMainWindow):
 
         webview = MiseWebView()
         webview.setPage(web_page)
-        bg_hex = "#1a1b26" if self.is_dark_layout else "#f5f6f9"
+        bg_hex = "#c6d1d1" if self.is_dark_layout else "#f5f6f9"
         web_page.setBackgroundColor(QColor(bg_hex))
 
         settings = webview.settings()
@@ -698,7 +754,7 @@ class MiseBrowser(QMainWindow):
         if webview in active_tabs:
             index = active_tabs.index(webview)
             display_title = (
-                title[:24] + "..." if len(title) > 24 else title
+                title[:28] + "..." if len(title) > 28 else title
             ) or "New Tab"
             try:
                 self.tab_list.item(index).setText(display_title)
@@ -747,7 +803,7 @@ class MiseBrowser(QMainWindow):
             if script.name() == "theme_override":
                 scripts.remove(script)
         
-        bg_hex = "#1a1b26" if self.is_dark_layout else "#f5f6f9"
+        bg_hex = "#c6d1d1" if self.is_dark_layout else "#f5f6f9"
         canvas_colour = QColor(bg_hex)
     
         for ws_name, tabs in self.workspace_engine.workspaces.items():
@@ -960,8 +1016,15 @@ class MiseBrowser(QMainWindow):
         """Instantiates and displays the modal reference overlay asynchronously."""
         self.help_overlay = HelpMenu(self, self.is_dark_layout)
         self.help_overlay.show()
+        
+    def open_settings_window(self):
+        from config import SettingsDialog
+        dialog = SettingsDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Inform the user that core system flag updates apply cleanly upon app restart
+            self.workspace_label.setText(" Settings saved. Restart required.")
+
     def open_command_palette(self):
-        # Simple extraction for palette colors
         theme_colors = {
             "bg_main": "#1a1b26" if self.is_dark_layout else "#f5f6f9",
             "text": "#c0caf5" if self.is_dark_layout else "#3c3e4f",
@@ -975,7 +1038,8 @@ class MiseBrowser(QMainWindow):
             "Focus Address Bar": self.toggle_address_bar,
             "Show Help": self.show_help_menu,
             "Close Current": self.close_current_tab,
-            "Save Workspace": self.quick_save_workspace
+            "Save Workspace": self.quick_save_workspace,
+            "Open Settings": self.open_settings_window
         }
         self.palette = CommandPalette(self, commands, theme_colors)
         self.palette.show()
@@ -991,7 +1055,9 @@ class MiseBrowser(QMainWindow):
         
 if __name__ == "__main__":
     import sys
+    from config import load_config
     
+    # Static rendering flags shared across all target devices
     sys.argv.append("--disable-reading-from-canvas")
     sys.argv.append("--disable-shared-workers")
     sys.argv.append("--enable-strict-mixed-content-checking")
@@ -1000,20 +1066,27 @@ if __name__ == "__main__":
     sys.argv.append("--force-webgpu-compat")
     sys.argv.append("--disable-speech-api")
     sys.argv.append("--disable-gpu-animation")
-    # sys.argv.append("--disable-gpu")
-    # sys.argv.append("--disable-gpu-compositing")
-    
-    sys.argv.append("--enable-background-timer-throttling")
-    sys.argv.append("--add-delay-to-background-timer-tasks")
-    sys.argv.append("--renderer-process-limit=3")
     sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
+
+    # Read the granular parameters from our isolated config engine
+    cfg = load_config()
+
+    if cfg.get("disable_gpu", True):
+        sys.argv.append("--disable-gpu")
+        sys.argv.append("--disable-gpu-compositing")
+
+    if cfg.get("background_throttling", True):
+        sys.argv.append("--enable-background-timer-throttling")
+        sys.argv.append("--add-delay-to-background-timer-tasks")
+        
+    limit = cfg.get("process_limit", 3)
+    sys.argv.append(f"--renderer-process-limit={limit}")
 
     app = QApplication(sys.argv)
     browser = MiseBrowser()
     app.installEventFilter(browser)
 
     browser.show()
-
     browser.restore_active_workspace_tabs()
     
     sys.exit(app.exec())

@@ -58,6 +58,9 @@ class WorkspaceDashboard(QWidget):
         for ws_name, tabs in self.manager.workspaces.items():
             ws_header = QListWidgetItem(f" {ws_name}")
             ws_header.setData(Qt.ItemDataRole.UserRole, ("workspace", ws_name))
+            workspace_font = QFont("Noto Sans", 16)
+            workspace_font.setBold(True)
+            ws_header.setFont(workspace_font)
 
             if ws_name == self.manager.current_workspace:
                 ws_header.setText(f" {ws_name} (Active)")

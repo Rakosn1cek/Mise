@@ -10,7 +10,7 @@ def get_browser_stylesheet(is_dark=True):
         }
     else:
         colors = {
-            "bg_main": "#f5f6f9",
+            "bg_main": "#c6d1d1",
             "bg_sidebar": "#e1e2e7",
             "text": "#3c3e4f",
             "accent": "#007acc",
@@ -27,19 +27,22 @@ def get_browser_stylesheet(is_dark=True):
             border-right: 1px solid {colors["border"]};
         }}
         QLabel#WorkspaceLabel {{
-            color: {colors["accent"]};
+            color: {colors["text"]};
             font-weight: bold;
+            font-size: 20px;
             padding: 6px;
             background: transparent;
         }}
         QListWidget#TabList, QListWidget#DashboardTree {{
             background-color: transparent;
             border: none;
+            font-size: 14px;
             color: {colors["text"]};
         }}
         QListWidget#TabList::item, QListWidget#DashboardTree::item {{
             padding: 8px;
             border-radius: 4px;
+            font-size: 14px;
         }}
         QListWidget#TabList::item:selected, QListWidget#DashboardTree::item:selected {{
             background-color: {colors["selected"]};
@@ -55,7 +58,7 @@ def get_browser_stylesheet(is_dark=True):
         QPushButton#NavIconButton, QPushButton#ThemeToggleBtn, QPushButton#NotiToggleBtn {{
             background-color: transparent;
             color: {colors["text"]};
-            font-size: 14px;
+            font-size: 18px;
             border: none;
             border-radius: 4px;
             padding: 4px;
@@ -65,14 +68,15 @@ def get_browser_stylesheet(is_dark=True):
         }}
         
         QLabel#DashboardHeader {{
-            color: {colors["accent"]};
-            font-size: 16px;
+            color: {colors["text"]};
+            font-size: 24px;
             font-weight: bold;
             background: transparent;
         }}
         QPushButton#DashboardBtn {{
             background-color: {colors["bg_sidebar"]};
             color: {colors["text"]};
+            font-size: 16px;
             border: 1px solid {colors["border"]};
             border-radius: 4px;
             padding: 8px;
