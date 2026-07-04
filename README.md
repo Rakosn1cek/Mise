@@ -2,6 +2,20 @@
 
 Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine. It is designed specifically for power users who want maximum performance and zero interface clutter, making it ideal for fanless or resource-constrained laptops.
 
+## Screenshots
+
+![Mise](assets/Mise.png)
+
+![Mise Workspaces](assets/Mise-workspaces.png)
+
+![Mise Keyboard Navigation](assets/Mise-keyboard-nav.png)
+
+![Mise Interface](assets/Mise-interface-nav.png)
+
+![Mise Power Profiles](assets/Mise-profiles.png)
+
+---
+
 ## Key Features
 - **Workspace Isolation**: Separate tab configurations into independent context layers, dynamically hydrating browser instances on demand to save memory.
 - **Persistent Authentication**: Dedicated, isolated cookie profile storage saves session tokens and logins securely to disk across restarts.
