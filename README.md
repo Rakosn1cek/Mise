@@ -39,7 +39,7 @@ Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine.
 
 ## Repository Structure
 - mise.py: The main application entry point and engine initialization loop.
-- workspace.py: Layout management, session handling, and the workspace dashboard tree [cite: 2026-07-04].
+- workspace.py: Layout management, session handling, and the workspace dashboard tree.
 - blocker.py: C++ level network request interceptor for bloat-free telemetry blocking.
 - config.py: Local JSON hardware configuration profiles and settings interface.
 - palette.py: Keyboard-driven command palette for interface navigation.
