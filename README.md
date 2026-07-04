@@ -55,6 +55,7 @@ Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine.
 **Global Keyboard Actions**
 
 | Key Binding | Scope Context | Target Execution Logic |
+| :--- | :--- | :--- |
 | Ctrl + T | Application | Spawns a fresh tab instance routed to default search engine. |
 | Ctrl + W | Browser View | Close the active browser view widget container securely. |
 | Ctrl + B | Aplictaion | Focus directly into the webview window. |
