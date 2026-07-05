@@ -6,13 +6,13 @@ Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine.
 
 ![Mise](assets/Mise.png)
 
-![Mise Workspaces](assets/Mise-workspaces.png)
+![Mise Workspaces](assets/Mise-work.png)
 
-![Mise Keyboard Navigation](assets/Mise-keyboard-nav.png)
+![Mise Keyboard Navigation](assets/Mise-keys.png)
 
-![Mise Interface](assets/Mise-interface-nav.png)
+![Mise Interface](assets/Mise-inter.png)
 
-![Mise Power Profiles](assets/Mise-profiles.png)
+![Mise Power Profiles](assets/Mise-prof.png)
 
 ---
 
