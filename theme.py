@@ -29,7 +29,7 @@ def get_browser_stylesheet(is_dark=True):
         QLabel#WorkspaceLabel {{
             color: {colors["text"]};
             font-weight: bold;
-            font-size: 20px;
+            font-size: 14px;
             padding: 6px;
             background: transparent;
         }}

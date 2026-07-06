@@ -10,13 +10,22 @@ class NotificationWorker:
         self.enabled = not self.enabled
         return self.enabled
 
-    def handle_incoming_notification(self, notification):
+    def handle_incoming_notification(self, notification, message_text=None):
         """Processes the web engine notification callback routing if enabled."""
         if not self.enabled:
             return
 
-        title = notification.title()
-        message = notification.message()
+        # Check if the incoming variable is a string layout or a native engine object wrapper
+        if isinstance(notification, str):
+            title = notification
+            message = message_text if message_text else ""
+        else:
+            try:
+                title = notification.title()
+                message = notification.message()
+            except AttributeError:
+                # Fallback safeguard if parameter parsing mismatches completely
+                return
         
         try:
             subprocess.Popen([

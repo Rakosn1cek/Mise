@@ -27,6 +27,7 @@ Web Interaction
 --------------------------------------------------
 Ctrl + F           Toggle Link Hints Overlay
 Right Click        Contextual Actions + (Arch Wiki)
+Ctrl + Shift + P   Toggle Private Browsing On/Off
 
 Sidebar Controls
 --------------------------------------------------

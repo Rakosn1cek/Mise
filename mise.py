@@ -43,6 +43,8 @@ from theme import get_browser_stylesheet
 from workspace import WorkspaceEngine, WorkspaceDashboard
 from blocker import TelemetryBlocker
 from palette import CommandPalette
+from privacy import PrivacyManager
+from config import initialize_engine_switches
 
 notification_worker_mod = __import__("notification-worker")
 NotificationWorker = notification_worker_mod.NotificationWorker
@@ -60,12 +62,33 @@ def silence_console_messages(level, message, line, sourceid):
 
 class TelemetryBlocker(QWebEngineUrlRequestInterceptor):
     def interceptRequest(self, info):
-        url_str = info.requestUrl().toString().lower()
+        # Extract the destination URL and host
+        target_url = info.requestUrl()
+        target_url_str = target_url.toString().lower()
+        target_host = target_url.host().lower()
+        
+        # Extract the top-level domain currently loaded in the active tab context
+        first_party_url = info.firstPartyUrl()
+        first_party_host = first_party_url.host().lower()
+
         block_keywords = [
             "telemetry", "analytics", "metrics", "log-upload", 
             "browser-intake", "stats", "pagead", "doubleclick"
         ]
-        if any(keyword in url_str for keyword in block_keywords):
+        
+        # Check if the network request hits any privacy block triggers
+        if any(keyword in target_url_str for keyword in block_keywords):
+            
+            # Extract basic root domains to compare context (e.g., reddit.com)
+            # This strips subdomains like api.github.com or svc.reddit.com down to the core domain
+            target_root = ".".join(target_host.split(".")[-2:])
+            first_party_root = ".".join(first_party_host.split(".")[-2:])
+            
+            # If the request is first-party (the site loading its own asset mechanics), bypass the block
+            if target_root == first_party_root and first_party_root != "":
+                return
+
+            # If it's a third-party domain (like google-analytics hitting a reddit page), block it
             info.block(True)
 
 class SettingsDialog(QDialog):
@@ -270,6 +293,9 @@ class MiseBrowser(QMainWindow):
         self.shared_profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
         
         self.shared_profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+
+        user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        QWebEngineProfile.defaultProfile().setHttpUserAgent(user_agent)
         
         scrollbar_script = QWebEngineScript()
         scrollbar_script.setSourceCode("""
@@ -302,6 +328,17 @@ class MiseBrowser(QMainWindow):
         self.shared_profile.setUrlRequestInterceptor(self.interceptor)
         
         self.shared_profile.downloadRequested.connect(self.handle_incoming_download)
+
+        # Instantiate the privacy manager wrapper context passing the shared profile instance
+        self.privacy_manager = PrivacyManager(self.shared_profile)
+
+        self.private_profile = QWebEngineProfile("MisePrivateProfile", self)
+        self.private_profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
+        self.private_profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
+        self.private_profile.setHttpUserAgent(self.shared_profile.httpUserAgent())
+                
+        # New boolean toggle mapping tracker for manual switching state
+        self.private_browsing_enabled = False
         
         self.setStyleSheet(get_browser_stylesheet(self.is_dark_layout))
         self.apply_interface_fonts()
@@ -403,13 +440,23 @@ class MiseBrowser(QMainWindow):
             self.open_command_palette()
             event.accept()
             return
+
+        if is_ctrl_shift and event.key() == Qt.Key.Key_P:
+            self.toggle_private_browsing()
+            event.accept()
+            return
                             
         super().keyPressEvent(event)
 
     def add_new_tab(self, url_str, workspace_name=None, force_focus=True):
-        from PyQt6.QtWebEngineCore import QWebEnginePage
+        # Route to the memory-isolated profile if private mode is toggled or target domain matches
+        if getattr(self, "private_browsing_enabled", False) or "ycombinator.com" in url_str.lower():
+            target_profile = self.private_profile
+        else:
+            target_profile = self.shared_profile
 
-        web_page = QWebEnginePage(self.shared_profile, self)
+        # Pass the evaluated profile directly into the native C++ engine factory layout
+        web_page = QWebEnginePage(target_profile, self)
         web_page.javaScriptConsoleMessage = silence_console_messages
         web_page.featurePermissionRequested.connect(
             lambda origin, feat, p=web_page: self.permission_engine.evaluate_request(p, origin, feat)
@@ -824,45 +871,46 @@ class MiseBrowser(QMainWindow):
         self.update()
 
     def restore_active_workspace_tabs(self):
-        """Constructs web views for every saved URL mapping belonging to the entire session layout on initialization."""
-        self.workspace_label.setText(f"{self.workspace_engine.current_workspace}")
-        session_file = os.path.expanduser("~/.config/mise/session.json")
-        all_workspaces_config = {self.workspace_engine.current_workspace: ["https://duckduckgo.com"]}
-        
-        if os.path.exists(session_file):
-            try:
-                with open(session_file, "r", encoding="utf-8") as f:
-                    session_data = json.load(f)
-                saved_groups = session_data.get("workspaces", {})
-                if saved_groups:
-                    all_workspaces_config = saved_groups
-            except Exception:
-                pass
-
-        for ws_name, urls in all_workspaces_config.items():
-            self.workspace_engine.create_workspace_record(ws_name)
+            """Constructs web views for every saved URL mapping belonging to the entire session layout on initialization."""
+            self.workspace_label.setText(f"{self.workspace_engine.current_workspace}")
+            session_file = os.path.expanduser("~/.config/mise/session.json")
+            all_workspaces_config = {self.workspace_engine.current_workspace: ["https://duckduckgo.com"]}
             
-            if ws_name == self.workspace_engine.current_workspace:
-                for url in urls:
-                    if url == "about:blank" or not url.strip():
-                        url = "https://duckduckgo.com"
-                    self.add_new_tab(url, ws_name, force_focus=False)
-            else:
-                self.workspace_engine.workspaces[ws_name] = []
-                self.workspace_engine.session_strings_cache[ws_name] = urls
+            if os.path.exists(session_file):
+                try:
+                    with open(session_file, "r", encoding="utf-8") as f:
+                        session_data = json.load(f)
+                    saved_groups = session_data.get("workspaces", {})
+                    if saved_groups:
+                        all_workspaces_config = saved_groups
+                except Exception:
+                    pass
+    
+            for ws_name, urls in all_workspaces_config.items():
+                self.workspace_engine.create_workspace_record(ws_name)
+                
+                if ws_name == self.workspace_engine.current_workspace:
+                    for url in urls:
+                        if url == "about:blank" or not url.strip():
+                            url = "https://duckduckgo.com"
+                        self.add_new_tab(url, ws_name, force_focus=False)
+                else:
+                    self.workspace_engine.workspaces[ws_name] = []
+                    self.workspace_engine.session_strings_cache[ws_name] = urls
+    
+            if self.tab_list.count() > 0:
+                self.tab_list.setCurrentRow(0)
+                self.switch_tab(0, force_focus=False)
+    
+            self.hot_reload_theme()
 
-        if self.tab_list.count() > 0:
-            self.tab_list.setCurrentRow(0)
-            self.switch_tab(0, force_focus=False)
-
-        self.hot_reload_theme()
 
     def closeEvent(self, event):
         self.workspace_engine.save_session()
         event.accept()
 
     def toggle_address_bar(self):
-        """Toggles a floating overlay address bar spanning across the top of the content box area."""
+        """Toggles a floating overlay address bar populated with the active tab's URL for viewing or modification."""
         if self.url_bar.isVisible():
             self.url_bar.hide()
             active_ws = self.workspace_engine.current_workspace
@@ -875,13 +923,26 @@ class MiseBrowser(QMainWindow):
                 except RuntimeError:
                     pass
         else:
-            self.add_new_tab("about:blank", force_focus=False)
+            active_ws = self.workspace_engine.current_workspace
+            current_idx = self.tab_list.currentRow()
+            tabs = self.workspace_engine.workspaces.get(active_ws, [])
+            
+            # Populate the address bar with the current tab's URL if it exists
+            if 0 <= current_idx < len(tabs) and not isinstance(tabs[current_idx], str):
+                current_url = tabs[current_idx].url().toString()
+                # Clear out fallback blank states for a cleaner typing experience
+                if current_url == "about:blank":
+                    self.url_bar.clear()
+                else:
+                    self.url_bar.setText(current_url)
+                    self.url_bar.selectAll() # Highlight text for quick replacement searches
+            else:
+                self.url_bar.clear()
             
             parent_widget = self.url_bar.parentWidget()
             if parent_widget:
                 self.url_bar.setGeometry(10, 10, parent_widget.width() - 20, 50)
             
-            self.url_bar.clear()
             self.url_bar.show()
             self.url_bar.setFocus()
             self.url_bar.raise_()
@@ -1039,7 +1100,9 @@ class MiseBrowser(QMainWindow):
             "Show Help": self.show_help_menu,
             "Close Current": self.close_current_tab,
             "Save Workspace": self.quick_save_workspace,
-            "Open Settings": self.open_settings_window
+            "Open Settings": self.open_settings_window,
+            "Clear Cookies": self.clear_active_site_cookies,
+            "Clear Cache": self.clear_active_site_cache
         }
         self.palette = CommandPalette(self, commands, theme_colors)
         self.palette.show()
@@ -1052,35 +1115,67 @@ class MiseBrowser(QMainWindow):
         subprocess.run(["wl-copy", command])
             
         subprocess.Popen(["kitty"])
+    
+    def purge_site_data(domain_name):
+        """
+        Finds and deletes all persistent cookies matching a specific domain 
+        and triggers an asynchronous network cache clear.
+        """
+        profile = QWebEngineProfile.defaultProfile()
+        cookie_store = profile.cookieStore()
+        
+        # Simple sanitisation to ensure subdomains match correctly
+        target_domain = domain_name.lower().strip()
+        if not target_domain.startswith("."):
+            # Catch cases where cookie domains start with a dot
+            dot_domain = f".{target_domain}"
+        else:
+            dot_domain = target_domain
+            target_domain = target_domain.lstrip(".")
+    
+        def cookie_filter(cookie):
+            cookie_domain = cookie.domain().lower()
+            # Delete if the cookie domain matches exactly or is a subdomain variation
+            if cookie_domain == target_domain or cookie_domain == dot_domain or cookie_domain.endswith(dot_domain):
+                cookie_store.deleteCookie(cookie)
+    
+        # Iterates through the cookie jar asynchronously and applies the filter logic
+        cookie_store.loadAllCookies()
+        cookie_store.cookieAdded.connect(cookie_filter)
+        
+        # Clear the global HTTP memory and disk cache layers asynchronously
+        profile.clearHttpCache()
+
+    def toggle_private_browsing(self):
+        """Switches the private mode state and updates the status indicator."""
+        status = self.privacy_manager.toggle_private_browsing()
+    
+        active_ws = self.workspace_engine.current_workspace
+        self.workspace_label.setText(f"{active_ws} 󰕥  : {status}")
+
+    def clear_active_site_cookies(self):
+        """Surgically purges cookies for the active domain via the privacy module."""
+        current_view = getattr(self, 'current_active_view', None)
+        result_msg = self.privacy_manager.clear_site_cookies(current_view)
+        
+        # Calling the worker instance directly passing two separate text string arguments
+        if hasattr(self, 'notification_worker'):
+            self.notification_worker.handle_incoming_notification("Mise Security", result_msg)
+
+    def clear_active_site_cache(self):
+        """Clears the HTTP cache layer via the privacy module safely."""
+        result_msg = self.privacy_manager.clear_cache()
+        
+        # Calling the worker instance directly passing two separate text string arguments
+        if hasattr(self, 'notification_worker'):
+            self.notification_worker.handle_incoming_notification("Mise System", result_msg)
         
 if __name__ == "__main__":
     import sys
-    from config import load_config
+    from config import initialize_engine_switches
     
-    # Static rendering flags shared across all target devices
-    sys.argv.append("--disable-reading-from-canvas")
-    sys.argv.append("--disable-shared-workers")
-    sys.argv.append("--enable-strict-mixed-content-checking")
-    sys.argv.append("--disable-battery-saver")
-    sys.argv.append("--log-level=3")
-    sys.argv.append("--force-webgpu-compat")
-    sys.argv.append("--disable-speech-api")
-    sys.argv.append("--disable-gpu-animation")
-    sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
-
-    # Read the granular parameters from our isolated config engine
-    cfg = load_config()
-
-    if cfg.get("disable_gpu", True):
-        sys.argv.append("--disable-gpu")
-        sys.argv.append("--disable-gpu-compositing")
-
-    if cfg.get("background_throttling", True):
-        sys.argv.append("--enable-background-timer-throttling")
-        sys.argv.append("--add-delay-to-background-timer-tasks")
-        
-    limit = cfg.get("process_limit", 3)
-    sys.argv.append(f"--renderer-process-limit={limit}")
+    # Configure hardware optimization arguments before QApplication initializes the socket
+    initialize_engine_switches()
 
     app = QApplication(sys.argv)
     browser = MiseBrowser()

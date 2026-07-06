@@ -107,3 +107,40 @@ class SettingsDialog(QDialog):
         # Re-execute the primary script entry point with the updated configuration flags
         import subprocess
         subprocess.Popen([sys.executable] + sys.argv)
+
+def initialize_engine_switches():
+    """Appends performance and security flags to the global initialization runtime."""
+    import sys
+    
+    # Static rendering flags shared across all target devices
+    sys.argv.append("--disable-reading-from-canvas")
+    sys.argv.append("--disable-shared-workers")
+    sys.argv.append("--enable-strict-mixed-content-checking")
+    sys.argv.append("--disable-battery-saver")
+    sys.argv.append("--log-level=2")
+    sys.argv.append("--disable-speech-api")
+    sys.argv.append("--disable-gpu-animation")
+    sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
+    sys.argv.append("--enable-low-end-device-mode")
+
+    # Force the engine to negotiate standard TLS grease and cipher layouts
+    sys.argv.append("--enable-features=TLSExtensionGrease")
+    sys.argv.append("--crypto-evaluation-scope=all")
+    
+    # Mask Chromium networking features that expose the internal wrapper profile
+    sys.argv.append("--disable-ssl-key-logging")
+    sys.argv.append("--disable-http2-grease")
+
+    # Read the granular parameters from our isolated config engine
+    cfg = load_config()
+
+    if cfg.get("disable_gpu", True):
+        sys.argv.append("--disable-gpu")
+        sys.argv.append("--disable-gpu-compositing")
+
+    if cfg.get("background_throttling", True):
+        sys.argv.append("--enable-background-timer-throttling")
+        sys.argv.append("--add-delay-to-background-timer-tasks")
+        
+    limit = cfg.get("process_limit", 3)
+    sys.argv.append(f"--renderer-process-limit={limit}")
