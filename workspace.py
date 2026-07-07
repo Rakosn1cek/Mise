@@ -79,13 +79,16 @@ class WorkspaceDashboard(QWidget):
                     self.view_tree.addItem(tab_item)
                     valid_tabs.append(url)
             else:
-                for webview in tabs:
+                for idx, webview in enumerate(tabs):
                     try:
+                        # Get title from WebView or cache
+                        ws_titles = self.manager.session_titles_cache.get(ws_name, [])
+                        
                         if isinstance(webview, str):
-                            title = "New Tab"
+                            title = ws_titles[idx] if idx < len(ws_titles) else "Inactive Tab"
                             url = webview
                         else:
-                            title = webview.title() or "New Tab"
+                            title = webview.title() or (ws_titles[idx] if idx < len(ws_titles) else "Loading...")
                             url = webview.url().toString()
                         
                         display_string = (
@@ -234,44 +237,45 @@ class WorkspaceEngine:
         self.main_window = main_window
         self.session_file = os.path.expanduser("~/.config/mise/session.json")
         self.workspaces = {}
-        self.session_strings_cache = {}  
+        self.session_strings_cache = {}
+        self.session_titles_cache = {}
         self.current_workspace = "Workspace 1"
         self.load_session()
 
-    def create_workspace_record(self, name=None):
-        if name is None:
-            next_index = len(self.workspaces) + 1
-            name = f"Workspace {next_index}"
-        if name not in self.workspaces:
-            self.workspaces[name] = []
-        return name
-
-    def rename_workspace_record(self, old_name, new_name):
-        if old_name in self.workspaces and new_name not in self.workspaces:
-            self.workspaces[new_name] = self.workspaces.pop(old_name)
-            if old_name in self.session_strings_cache:
-                self.session_strings_cache[new_name] = self.session_strings_cache.pop(old_name)
-            if self.current_workspace == old_name:
-                self.current_workspace = new_name
+    # ... (other methods)
 
     def switch_workspace_record(self, target_ws, track_focus=False):
         if target_ws == self.current_workspace:
             return
 
-        for webview in self.workspaces[self.current_workspace]:
-            try:
-                if not isinstance(webview, str):
-                    webview.hide()
-                    self.main_window.content_area.removeWidget(webview)
-                    webview.titleChanged.disconnect()
-                    webview.urlChanged.disconnect()
-            except Exception:
-                pass
+        # Dehydrate current workspace: Cache URLs and titles, then destroy widgets to free memory
+        current_tabs = self.workspaces[self.current_workspace]
+        self.session_strings_cache[self.current_workspace] = []
+        self.session_titles_cache[self.current_workspace] = []
+        
+        for webview in current_tabs:
+            if not isinstance(webview, str):
+                self.session_strings_cache[self.current_workspace].append(webview.url().toString())
+                self.session_titles_cache[self.current_workspace].append(webview.title())
+                
+                webview.hide()
+                self.main_window.content_area.removeWidget(webview)
+                
+                if webview.page():
+                    webview.page().deleteLater()
+                webview.deleteLater()
+            else:
+                self.session_strings_cache[self.current_workspace].append(webview)
+                self.session_titles_cache[self.current_workspace].append("Inactive")
+
+        # Mark all as dehydrated
+        self.workspaces[self.current_workspace] = ["dehydrated"] * len(current_tabs)
 
         self.current_workspace = target_ws
         self.main_window.workspace_label.setText(f" {target_ws}")
         self.main_window.tab_list.clear()
 
+        # Rehydrate target workspace
         if not self.workspaces[target_ws] or isinstance(self.workspaces[target_ws][0], str):
             urls_to_load = self.session_strings_cache.get(target_ws, ["https://duckduckgo.com"])
             self.workspaces[target_ws] = []
@@ -313,10 +317,6 @@ class WorkspaceEngine:
             self.main_window.tab_list.setCurrentRow(0)
             self.main_window.switch_tab(0, force_focus=track_focus)
 
-        if self.main_window.tab_list.count() > 0:
-            self.main_window.tab_list.setCurrentRow(0)
-            self.main_window.switch_tab(0, force_focus=track_focus)
-
     def save_session(self):
         session_data = {
             "current_workspace": self.current_workspace,
@@ -338,6 +338,14 @@ class WorkspaceEngine:
                 json.dump(session_data, f, indent=4)
         except Exception:
             pass
+
+    def create_workspace_record(self, name=None):
+        if name is None:
+            next_index = len(self.workspaces) + 1
+            name = f"Workspace {next_index}"
+        if name not in self.workspaces:
+            self.workspaces[name] = []
+        return name
 
     def load_session(self):
         if os.path.exists(self.session_file):

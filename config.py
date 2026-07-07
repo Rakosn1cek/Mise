@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox
 
@@ -110,8 +111,6 @@ class SettingsDialog(QDialog):
 
 def initialize_engine_switches():
     """Appends performance and security flags to the global initialization runtime."""
-    import sys
-    
     # Static rendering flags shared across all target devices
     sys.argv.append("--disable-reading-from-canvas")
     sys.argv.append("--disable-shared-workers")
@@ -122,6 +121,11 @@ def initialize_engine_switches():
     sys.argv.append("--disable-gpu-animation")
     sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
     sys.argv.append("--enable-low-end-device-mode")
+
+    # Aggressive memory compaction and cache discarding flags
+    sys.argv.append("--memory-pressure-off-threshold-percent=30")
+    sys.argv.append("--aggressive-cache-discard")
+    sys.argv.append("--js-flags=--expose-gc")
 
     # Force the engine to negotiate standard TLS grease and cipher layouts
     sys.argv.append("--enable-features=TLSExtensionGrease")
