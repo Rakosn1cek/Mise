@@ -52,7 +52,6 @@ NotificationWorker = notification_worker_mod.NotificationWorker
 help_menu_mod = __import__("help-menu")
 HelpMenu = help_menu_mod.HelpMenu
 
-
 # --------------------------------------------------------------------
 
 # Absolute intercept handler to prevent Chromium console noise from spilling into the terminal
@@ -1204,6 +1203,7 @@ if __name__ == "__main__":
     initialize_engine_switches()
 
     app = QApplication(sys.argv)
+    app.__version__ = "0.1.0"
     browser = MiseBrowser()
     app.installEventFilter(browser)
 
