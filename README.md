@@ -72,15 +72,15 @@ Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine.
 | :--- | :--- | :--- |
 | Ctrl + T | Application | Spawns a fresh tab instance routed to default search engine. |
 | Ctrl + W | Browser View | Close the active browser view widget container securely. |
-| Ctrl + B | Aplictaion | Focus directly into the webview window. |
+| Ctrl + B | Application | Focus directly into the webview window. |
 | Ctrl + Shift + W | Application | Toggles between active workspace tabs and the Workspaces Dashboard. |
 | Ctrl + S | Browser View | Clones the current address layout directly into a new duplicate tab. |
 | Ctrl + R | Browser View | Sends an immediate reload instruction wrapper to the active web page. |
 | Ctrl + D | Dashboard Tree | Quick-remove macro to clear the focused element item from memory. |
 | Ctrl + L | Application | Activates the floating wide address input box overlay spanning the frame. |
 | Ctrl + M | Application | Focus directly into the sidebar panel for instant arrow handling. |
-| CTRL + F | Aplication | Toggle links hints overlay. |
-| CTRL + P | Aplicattion | Opens a command palette floating window. |
+| CTRL + F | Application | Toggle links hints overlay. |
+| CTRL + P | Application | Opens a command palette floating window. |
 
 ---
 
@@ -103,16 +103,28 @@ Address commitments executed inside the wide address bar are structured through 
 ---
 
 ## Dependencies & Run Execution
-Mise requires an environment tracking modern Python bindings alongside system database frameworks:
+Mise requires an environment tracking modern Python bindings alongside system database frameworks.
 
-**Required Packages (Arch Linux Reference)**
+### Installation Options
+
+#### Option A: Distro-Agnostic / Cross-Platform (Recommended for Windows/macOS)
+Install the stable version-pinned environment directly via pip:
+
+`pip install -r requirements.txt`
+
+#### Option B: Arch Linux Native
+Deploy native packages directly through the system database framework:
 
 `sudo pacman -S python-pyqt6 python-pyqt6-webengine`
 
-**Direct Invocation Trace**
+### Launch Execution
 
 `python3 mise.py`
 
 All session data and hardware optimization profiles persist cleanly inside ~/.config/mise/. 
+
+### Platform Compatibility Notes
+- **Windows Integration**: The environment variable declarations positioned at the summit of `mise.py` are optimised for Linux Wayland compositor pipelines (`xdgdesktopportal`). If you encounter silent initialization crashes or window drawing stalls on Windows 11, comment out or remove the `os.environ["QT_QPA_PLATFORMTHEME"]` assignment line before launching.
+- **Terminal Execution**: Triggering shell sessions via the command palette (`Ctrl + P`) adapts automatically to the host environment. Submitting a raw system string spawns a local console loop (`cmd`/`wt` on Windows, native `Terminal` on macOS, or standard minimalist terminal emulators on Linux systems).
 
 Contributions, code audits, and optimizations regarding resource reduction are welcome.

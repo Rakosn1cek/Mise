@@ -1108,13 +1108,39 @@ class MiseBrowser(QMainWindow):
         self.palette.show()
 
     def run_in_terminal(self, command):
-        """Copies text cleanly to the global clipboard and opens a fresh terminal."""
+        """Copies text cleanly to the global clipboard and opens a platform-appropriate terminal."""
         if not command.strip():
             return
 
-        subprocess.run(["wl-copy", command])
+        # Use built-in cross-platform Qt clipboard instead of wl-copy
+        QApplication.clipboard().setText(command)
             
-        subprocess.Popen(["kitty"])
+        import platform
+        system_platform = platform.system()
+
+        try:
+            if system_platform == "Linux":
+                # Check for standard minimalist terminal setups
+                for term in ["kitty", "alacritty", "foot", "st", "xterm"]:
+                    if subprocess.run(["which", term], capture_output=True).returncode == 0:
+                        subprocess.Popen([term])
+                        return
+                # Fallback to general terminal desktop executor if specific TUIs aren't matched
+                subprocess.Popen(["xdg-terminal-exec"])
+                
+            elif system_platform == "Windows":
+                # Launch Windows Terminal if available, fallback to classic cmd
+                import shutil
+                if shutil.which("wt"):
+                    subprocess.Popen(["wt"])
+                else:
+                    subprocess.Popen(["cmd"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    
+            elif system_platform == "Darwin":
+                # Launch default macOS Terminal via open binary
+                subprocess.Popen(["open", "-a", "Terminal"])
+        except Exception:
+            pass
     
     def purge_site_data(domain_name):
         """
