@@ -146,21 +146,33 @@ class WorkspaceDashboard(QWidget):
                 return
             has_run = True
 
-            try:
-                edit_field.returnPressed.disconnect()
-                edit_field.editingFinished.disconnect()
-            except Exception:
-                pass
-
+            edit_field.blockSignals(True)
             new_name = edit_field.text().strip()
+            
+            self.view_tree.setItemWidget(item, None)
             self.view_tree.removeItemWidget(item)
 
             if new_name and new_name != old_name:
                 self.manager.rename_workspace_record(old_name, new_name)
 
-            self.refresh_view_data()
+            # Defer the UI rebuild to the next event tick to ensure complete widget cleanup
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, self.refresh_view_data)
 
-        edit_field.returnPressed.connect(save_name)
+        def field_key_filter(event):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                save_name()
+                event.accept()
+            elif event.key() == Qt.Key.Key_Escape:
+                self.view_tree.setItemWidget(item, None)
+                self.view_tree.removeItemWidget(item)
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, self.refresh_view_data)
+                event.accept()
+            else:
+                QLineEdit.keyPressEvent(edit_field, event)
+
+        edit_field.keyPressEvent = field_key_filter
         edit_field.editingFinished.connect(save_name)
 
     def _handle_row_selection(self, row_idx):
@@ -172,18 +184,21 @@ class WorkspaceDashboard(QWidget):
         if not item:
             return
 
+        # If an item is currently being edited with a QLineEdit, ignore list-level shortcuts
+        if self.view_tree.itemWidget(item) is not None:
+            super(QListWidget, self.view_tree).keyPressEvent(event)
+            return
+
         payload = item.data(Qt.ItemDataRole.UserRole)
 
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if payload:
                 if payload[0] == "workspace":
                     target_ws = payload[1]
-                    # Only switch the engine record when explicitly confirmed via Enter
                     self.manager.switch_workspace_record(target_ws, track_focus=False)
                     self.refresh_view_data()
                 elif payload[0] == "tab":
                     _, target_ws, target_tab_idx = payload
-                    # Force the manager to target the selected workspace context cleanly
                     self.manager.switch_workspace_record(target_ws, track_focus=True)
                     self.main_window.tab_list.setCurrentRow(target_tab_idx)
                     self.main_window.close_dashboard()
@@ -241,8 +256,6 @@ class WorkspaceEngine:
         self.session_titles_cache = {}
         self.current_workspace = "Workspace 1"
         self.load_session()
-
-    # ... (other methods)
 
     def switch_workspace_record(self, target_ws, track_focus=False):
         if target_ws == self.current_workspace:
@@ -345,8 +358,31 @@ class WorkspaceEngine:
             name = f"Workspace {next_index}"
         if name not in self.workspaces:
             self.workspaces[name] = []
+            self.session_strings_cache[name] = ["https://duckduckgo.com"]
         return name
 
+    def rename_workspace_record(self, old_name, new_name):
+        # Prevent rewriting keys if the source is missing or target collision occurs
+        if old_name not in self.workspaces or new_name in self.workspaces:
+            return
+
+        # Move the main tab array representation to the new key mapping
+        self.workspaces[new_name] = self.workspaces.pop(old_name)
+
+        # Simultaneously transfer across the cache dictionaries used by refresh_view_data
+        if old_name in self.session_strings_cache:
+            self.session_strings_cache[new_name] = self.session_strings_cache.pop(old_name)
+        if old_name in self.session_titles_cache:
+            self.session_titles_cache[new_name] = self.session_titles_cache.pop(old_name)
+
+        # Update internal tracking flags if the altered workspace is the one actively loaded
+        if self.current_workspace == old_name:
+            self.current_workspace = new_name
+            self.main_window.workspace_label.setText(f" {new_name}")
+
+        # Commit changes down to the configuration file instantly to sync states
+        self.save_session()
+    
     def load_session(self):
         if os.path.exists(self.session_file):
             try:
