@@ -10,7 +10,8 @@ DEFAULT_CONFIG = {
     "disable_gpu": True,
     "background_throttling": True,
     "process_limit": 3,
-    "enable_notifications": True
+    "enable_notifications": True,
+    "enable_oversight": False
 }
 
 def load_config():
@@ -59,10 +60,11 @@ class SettingsDialog(QDialog):
         self.gpu_check = QCheckBox("Disable Hardware Acceleration (GPU)")
         self.throttle_check = QCheckBox("Enable Background Timer Throttling")
         self.noti_check = QCheckBox("Enable System Notifications Component")
+        self.oversight_check = QCheckBox("Enable Oversight Security Auditing")
         
         # Apply structural stylesheet overrides directly to check boxes
         checkbox_style = "color: #c0caf5; background: transparent; padding: 2px;"
-        for cb in (self.gpu_check, self.throttle_check, self.noti_check):
+        for cb in (self.gpu_check, self.throttle_check, self.noti_check, self.oversight_check):
             cb.setStyleSheet(checkbox_style)
             layout.addWidget(cb)
             
@@ -70,6 +72,7 @@ class SettingsDialog(QDialog):
         self.gpu_check.setChecked(self.current_config.get("disable_gpu", True))
         self.throttle_check.setChecked(self.current_config.get("background_throttling", True))
         self.noti_check.setChecked(self.current_config.get("enable_notifications", True))
+        self.oversight_check.setChecked(self.current_config.get("enable_oversight", False))
         
         action_layout = QHBoxLayout()
         action_layout.addStretch()
@@ -91,6 +94,7 @@ class SettingsDialog(QDialog):
         self.current_config["disable_gpu"] = self.gpu_check.isChecked()
         self.current_config["background_throttling"] = self.throttle_check.isChecked()
         self.current_config["enable_notifications"] = self.noti_check.isChecked()
+        self.current_config["enable_oversight"] = self.oversight_check.isChecked()
         
         if self.throttle_check.isChecked():
             self.current_config["process_limit"] = 3
@@ -119,13 +123,15 @@ def initialize_engine_switches():
     sys.argv.append("--log-level=2")
     sys.argv.append("--disable-speech-api")
     sys.argv.append("--disable-gpu-animation")
-    sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
+    # sys.argv.append("--disable-features=Translate,BlinkFeatures,AudioServiceOutOfProcess")
     sys.argv.append("--enable-low-end-device-mode")
 
     # Aggressive memory compaction and cache discarding flags
-    sys.argv.append("--memory-pressure-off-threshold-percent=30")
+    sys.argv.append("--memory-pressure-off-threshold-percent=20")
     sys.argv.append("--aggressive-cache-discard")
     sys.argv.append("--js-flags=--expose-gc")
+    # Force V8 to trim the heap down and recycle allocations aggressively
+    # sys.argv.append("--js-flags=--max-semi-space-size=2 --max-old-space-size=512 --gc-global")
 
     # Force the engine to negotiate standard TLS grease and cipher layouts
     sys.argv.append("--enable-features=TLSExtensionGrease")
@@ -146,5 +152,5 @@ def initialize_engine_switches():
         sys.argv.append("--enable-background-timer-throttling")
         sys.argv.append("--add-delay-to-background-timer-tasks")
         
-    limit = cfg.get("process_limit", 3)
+    limit = cfg.get("process_limit", 2)
     sys.argv.append(f"--renderer-process-limit={limit}")

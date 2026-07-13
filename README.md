@@ -1,5 +1,16 @@
 # Mise Browser
 
+## This project is no longer under development and has reached its end-of-life status. Support for Mise (1.0) has officially ceased.
+
+## This decision comes after encountering structural limitations with the original Python implementation that were unable to perform efficiently on low-power, fanless hardware. Furthermore, due to instances of this codebase being misappropriated and repackaged without proper attribution, the project is now strictly archived to protect the integrity of the work.
+
+**Existing users are free to continue using the final version as it currently exists, but no further updates, security patches, or maintenance will be provided. The repository remains in read-only mode to preserve access for those who have already integrated the code into their workflows.**
+
+**I am shifting my focus to Mise (2.0), replacing Python with Electron to achieve better performance on low-end, fanless hardware. Moving forward, Mise 2.0 will be developed in a private repository and access will be granted by invitation or request only. You may reach out to me via GitHub if you wish to request access to the new project.**
+
+Thank you all for your support.
+
+
 Mise is a minimalist, keyboard-driven browser built with Python and QtWebEngine. It is designed specifically for power users who want maximum performance and zero interface clutter, making it ideal for fanless or resource-constrained laptops.
 
 ## Screenshots

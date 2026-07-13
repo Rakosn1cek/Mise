@@ -1,5 +1,5 @@
-import json
 import os
+import json
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QKeyEvent, QFont
 from PyQt6.QtWidgets import (
@@ -256,7 +256,7 @@ class WorkspaceEngine:
         self.session_titles_cache = {}
         self.current_workspace = "Workspace 1"
         self.load_session()
-
+            
     def switch_workspace_record(self, target_ws, track_focus=False):
         if target_ws == self.current_workspace:
             return

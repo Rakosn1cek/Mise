@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 
 import os
+os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--enable-devtools'
+
 import sys
 import json
 import re
 import subprocess
+import shutil
 
 # Core system hooks MUST run explicitly before local module references trigger
 os.environ["QT_LOGGING_RULES"] = "qt.webenginecontext.debug=false;*.warning=false"
 os.environ["GLOG_minloglevel"] = "2"
 os.environ["QT_QPA_PLATFORMTHEME"] = "xdgdesktopportal"
+os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--disable-gpu-sandbox'
 
-try:
-    stderr_fileno = sys.stderr.fileno()
-    null_fileno = os.open(os.devnull, os.O_WRONLY)
-    os.dup2(null_fileno, stderr_fileno)
-except Exception:
-    pass
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor, QAction
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor, QWebEngineScript, QWebEnginePage, QWebEngineContextMenuRequest
 from PyQt6.QtWidgets import (
@@ -32,6 +30,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QStackedLayout,
     QWidget,
+    QInputDialog,
     QStackedWidget,
     QDialog,
     QMenu,
@@ -42,9 +41,12 @@ from permissions import PermissionEngine
 from theme import get_browser_stylesheet
 from workspace import WorkspaceEngine, WorkspaceDashboard
 from blocker import TelemetryBlocker
+from config import SettingsDialog
 from palette import CommandPalette
 from privacy import PrivacyManager
-from config import initialize_engine_switches
+from config import initialize_engine_switches, load_config, save_config
+from filters import is_target_script
+from memoryguard import MemoryGuard
 
 notification_worker_mod = __import__("notification-worker")
 NotificationWorker = notification_worker_mod.NotificationWorker
@@ -90,63 +92,6 @@ class TelemetryBlocker(QWebEngineUrlRequestInterceptor):
             # If it's a third-party domain (like google-analytics hitting a reddit page), block it
             info.block(True)
 
-class SettingsDialog(QDialog):
-    def __init__(self, parent=None, current_mode="low_end"):
-        super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setFixedWidth(360)
-        self.setObjectName("SettingsWindow")
-        
-        # Apply clean translucent windows flags
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        
-        layout = QVBoxLayout()
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-        
-        header = QLabel("Hardware Optimization Profile")
-        header.setStyleSheet("font-weight: bold; color: #2ac3de; font-size: 14px;")
-        layout.addWidget(header)
-        
-        # Configuration toggle buttons using descriptive state text
-        self.low_end_btn = QPushButton("Low-End / Fanless Profile (Throttled)")
-        self.high_end_btn = QPushButton("High-End / Performance Profile (Uncapped)")
-        
-        # Highlight active setting selection on window draw
-        self.selected_mode = current_mode
-        self.update_button_states()
-        
-        self.low_end_btn.clicked.connect(lambda: self.set_profile("low_end"))
-        self.high_end_btn.clicked.connect(lambda: self.set_profile("high_end"))
-        
-        layout.addWidget(self.low_end_btn)
-        layout.addWidget(self.high_end_btn)
-        
-        # Bottom window termination control rows
-        action_layout = QHBoxLayout()
-        action_layout.addStretch()
-        
-        save_btn = QPushButton("Save & Exit")
-        save_btn.clicked.connect(self.accept)
-        action_layout.addWidget(save_btn)
-        
-        layout.addLayout(action_layout)
-        self.setLayout(layout)
-        
-    def set_profile(self, mode):
-        self.selected_mode = mode
-        self.update_button_states()
-        
-    def update_button_states(self):
-        # Explicit style application based on selection mechanics
-        if self.selected_mode == "low_end":
-            self.low_end_btn.setStyleSheet("background-color: #364a85; color: #c0caf5; border: 1px solid #2ac3de;")
-            self.high_end_btn.setStyleSheet("background-color: transparent; color: #c0caf5; border: 1px solid #24283b;")
-        else:
-            self.low_end_btn.setStyleSheet("background-color: transparent; color: #c0caf5; border: 1px solid #24283b;")
-            self.high_end_btn.setStyleSheet("background-color: #364a85; color: #c0caf5; border: 1px solid #2ac3de;")
-
 
 class MiseBrowser(QMainWindow):
     def __init__(self):
@@ -156,6 +101,8 @@ class MiseBrowser(QMainWindow):
 
         # Track system-wide preferences inside clean initialization parameter variables
         self.is_dark_layout = True  # Toggle manually to False for light interface layout setup
+
+        self.has_oversight = shutil.which("oversight") is not None
 
         self.workspace_engine = WorkspaceEngine(self)
         self.dashboard_view = WorkspaceDashboard(self)
@@ -319,6 +266,16 @@ class MiseBrowser(QMainWindow):
             hint_script.setRunsOnSubFrames(True)
             self.shared_profile.scripts().insert(hint_script)
 
+        pruner_script = QWebEngineScript()
+        pruner_path = os.path.join(os.path.dirname(__file__), "pruner.js")
+        if os.path.exists(pruner_path):
+            with open(pruner_path, "r", encoding="utf-8") as f:
+                pruner_script.setSourceCode(f.read())
+            pruner_script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+            pruner_script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+            pruner_script.setRunsOnSubFrames(True)
+            self.shared_profile.scripts().insert(pruner_script)
+        
         # Instantiate the isolated notification controller module
         self.notification_worker = NotificationWorker()
         self.shared_profile.setNotificationPresenter(self.notification_worker.handle_incoming_notification)
@@ -345,6 +302,10 @@ class MiseBrowser(QMainWindow):
         # Instantiate the isolated background permissions policy rule book
         self.permission_engine = PermissionEngine()
 
+        # Trigger a background recycle the moment total memory passes 3.0 GB
+        self.background_view = None
+        self.memory_manager = MemoryGuard(self, interval_ms=60000, max_gb=1.8)
+    
     def apply_interface_fonts(self):
         """Uniform text properties across sidebar elements, navigation nodes, and workspace items."""
         ui_font = QFont("Noto Sans", 14)
@@ -447,9 +408,8 @@ class MiseBrowser(QMainWindow):
                             
         super().keyPressEvent(event)
 
-    def add_new_tab(self, url_str, workspace_name=None, force_focus=True):
-        # Route to the memory-isolated profile if private mode is toggled or target domain matches
-        if getattr(self, "private_browsing_enabled", False) or "ycombinator.com" in url_str.lower():
+    def add_new_tab(self, url_str, workspace_name=None, force_focus=True, position_idx=None):
+        if getattr(self, "private_browsing_enabled", False):
             target_profile = self.private_profile
         else:
             target_profile = self.shared_profile
@@ -633,6 +593,7 @@ class MiseBrowser(QMainWindow):
 
             # Evaluate whether the underlying rendering engine page is active and responding
             if target_webview.page() and not target_webview.page().isLoading():
+                target_webview.page().runJavaScript("if (typeof gc === 'function') gc();")
                 # Execute a lightweight, non-blocking check to verify if the JavaScript environment is responsive
                 target_webview.page().runJavaScript(
                     "1;", 
@@ -1028,7 +989,21 @@ class MiseBrowser(QMainWindow):
         from PyQt6.QtWidgets import QFileDialog
         from PyQt6.QtCore import QDir
 
+        config = load_config()
         suggested_name = download_item.suggestedFileName()
+        download_url = download_item.url().toString()
+
+        # Intercept high-risk scripts using our external module rulebook
+        if is_target_script(suggested_name) and config.get("enable_oversight", False):
+            audited_download = f"oversight '{download_url}'"
+            QApplication.clipboard().setText(audited_download)
+            download_item.cancel()
+            
+            self.workspace_label.setText(" Intercepted script download. Routing to Oversight...")
+            self._spawn_native_terminal()
+            return
+
+        # Original logic fallback path stays untouched
         default_dir = os.path.expanduser("~/Downloads")
         os.makedirs(default_dir, exist_ok=True)
 
@@ -1078,7 +1053,6 @@ class MiseBrowser(QMainWindow):
         self.help_overlay.show()
         
     def open_settings_window(self):
-        from config import SettingsDialog
         dialog = SettingsDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Inform the user that core system flag updates apply cleanly upon app restart
@@ -1091,10 +1065,15 @@ class MiseBrowser(QMainWindow):
             "border": "#24283b" if self.is_dark_layout else "#d2d3db",
             "selected": "#364a85" if self.is_dark_layout else "#cfe2fe"
         }
+        # Read the configuration to determine the current state string
+        from config import load_config
+        config = load_config()
+        status_str = "ON" if config.get("enable_oversight", False) else "OFF"
         
         commands = {
             "Toggle Theme": self.toggle_theme_mode,
             "Toggle Dashboard": self.toggle_dashboard_view,
+            f"Toggle Oversight: {status_str}": self.toggle_oversight,
             "Focus Address Bar": self.toggle_address_bar,
             "Show Help": self.show_help_menu,
             "Close Current": self.close_current_tab,
@@ -1107,39 +1086,19 @@ class MiseBrowser(QMainWindow):
         self.palette.show()
 
     def run_in_terminal(self, command):
-        """Copies text cleanly to the global clipboard and opens a platform-appropriate terminal."""
+        """Copies the audited command chain to the clipboard and opens a terminal."""
         if not command.strip():
             return
 
-        # Use built-in cross-platform Qt clipboard instead of wl-copy
-        QApplication.clipboard().setText(command)
+        config = load_config()
             
-        import platform
-        system_platform = platform.system()
-
-        try:
-            if system_platform == "Linux":
-                # Check for standard minimalist terminal setups
-                for term in ["kitty", "alacritty", "foot", "st", "xterm"]:
-                    if subprocess.run(["which", term], capture_output=True).returncode == 0:
-                        subprocess.Popen([term])
-                        return
-                # Fallback to general terminal desktop executor if specific TUIs aren't matched
-                subprocess.Popen(["xdg-terminal-exec"])
-                
-            elif system_platform == "Windows":
-                # Launch Windows Terminal if available, fallback to classic cmd
-                import shutil
-                if shutil.which("wt"):
-                    subprocess.Popen(["wt"])
-                else:
-                    subprocess.Popen(["cmd"], creationflags=subprocess.CREATE_NEW_CONSOLE)
-                    
-            elif system_platform == "Darwin":
-                # Launch default macOS Terminal via open binary
-                subprocess.Popen(["open", "-a", "Terminal"])
-        except Exception:
-            pass
+        if config.get("enable_oversight", False):
+            audited_command = f"oversight '{command}'"
+        else:
+            audited_command = command
+        
+        QApplication.clipboard().setText(audited_command)
+        self._spawn_native_terminal()
     
     def purge_site_data(domain_name):
         """
@@ -1194,7 +1153,129 @@ class MiseBrowser(QMainWindow):
         # Calling the worker instance directly passing two separate text string arguments
         if hasattr(self, 'notification_worker'):
             self.notification_worker.handle_incoming_notification("Mise System", result_msg)
+
+    def toggle_oversight(self):
+        try:
+            # Load the configuration directly
+            config = load_config()
+            
+            # Invert the flag
+            current_state = config.get("enable_oversight", False)
+            config["enable_oversight"] = not current_state
+            
+            # Save explicitly
+            save_config(config)
+            
+        except Exception as e:
+            # Print the error so you can see why it aborts without crashing the app
+            print(f"Error toggling oversight: {e}")
+
+    def prepare_background_swap(self):
+        # Prevent starting a duplicate load cycle if one is already active
+        if self.background_view:
+            return
+
+        active_ws = self.workspace_engine.current_workspace
+        tabs = self.workspace_engine.workspaces.get(active_ws, [])
         
+        # Find the precise index of the old view within the active workspace array
+        try:
+            current_idx = tabs.index(self.current_active_view)
+        except ValueError:
+            return
+
+        # Instantiate a completely separate view element hidden in the layout background
+        self.background_view = QWebEngineView(self)
+        
+        if getattr(self, "private_browsing_enabled", False):
+            target_profile = self.private_profile
+        else:
+            target_profile = self.shared_profile
+            
+        self.background_view.setPage(QWebEnginePage(target_profile, self))
+        self.background_view.page().javaScriptConsoleMessage = silence_console_messages
+        
+        # Apply identical display attributes to match the primary viewport configuration
+        settings = self.background_view.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.ForceDarkMode, self.is_dark_layout)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, True)
+        
+        # Add it to the layout stack (hidden behind the active view)
+        self.content_area.addWidget(self.background_view)
+        
+        # Warm up the background view with the active canvas URL state
+        current_url = self.current_active_view.url()
+        self.background_view.load(current_url)
+        
+        # Connect the readiness callback to fire once the background frame is fully rendered
+        self.background_view.loadFinished.connect(self.execute_seamless_view_swap)
+
+    def execute_seamless_view_swap(self, success):
+        if success and self.background_view:
+            active_ws = self.workspace_engine.current_workspace
+            tabs = self.workspace_engine.workspaces.get(active_ws, [])
+            
+            # Find the precise index of the old view within the active workspace array
+            try:
+                current_idx = tabs.index(self.current_active_view)
+            except ValueError:
+                return
+                
+            old_view = self.current_active_view
+            
+            # Update the reference directly inside the workspace engine state
+            tabs[current_idx] = self.background_view
+            
+            # Instantly swap the visible canvas layer index without layout reflows
+            self.content_area.setCurrentWidget(self.background_view)
+            self.current_active_view = self.background_view
+            
+            # Forward the global title changes and url listeners onto the fresh instance loop
+            self.background_view.titleChanged.connect(
+                lambda title, wv=self.background_view: self.update_tab_titles(wv, title)
+            )
+            self.background_view.urlChanged.connect(
+                lambda url, wv=self.background_view: self.update_url_field(wv, url)
+            )
+            
+            # Safely extract and destroy the old bloated view from memory space
+            self.content_area.removeWidget(old_view)
+            old_view.page().deleteLater()
+            old_view.deleteLater()
+            
+            # Reset the tracking state for the next cycle
+            self.background_view = None
+            
+            # Give the browser focus back so navigation remains active
+            self.current_active_view.setFocus()
+    
+    def _spawn_native_terminal(self):
+        """Internal helper to identify and spawn the platform-appropriate terminal emulator."""
+        import platform
+        system_platform = platform.system()
+
+        try:
+            if system_platform == "Linux":
+                for term in ["kitty", "alacritty", "foot", "st", "xterm"]:
+                    if subprocess.run(["which", term], capture_output=True).returncode == 0:
+                        subprocess.Popen([term])
+                        return
+                subprocess.Popen(["xdg-terminal-exec"])
+                
+            elif system_platform == "Windows":
+                import shutil
+                if shutil.which("wt"):
+                    subprocess.Popen(["wt"])
+                else:
+                    subprocess.Popen(["cmd"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    
+            elif system_platform == "Darwin":
+                subprocess.Popen(["open", "-a", "Terminal"])
+        except Exception:
+            pass
+                        
 if __name__ == "__main__":
     import sys
     from config import initialize_engine_switches
